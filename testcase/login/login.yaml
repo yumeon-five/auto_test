@@ -1,4 +1,9 @@
-# 登录接口用例数据
+# 登录接口用例数据（模块三：登录）
+#
+# 被测接口：POST /dar/user/login（flask mock 服务 base/flask_service.py 的 user_login）
+# 传参方式：form 表单 application/x-www-form-urlencoded
+#           —— 接口用 flask.request.form.get('user_name') 取值，写成 json 会取不到参数
+# 参数：user_name / passwd（写死的账号：test01 / admin123）
 #
 # 结构说明：
 #   baseInfo  接口公共信息（baseInfo.url 会与 conf/conf.ini 里的 host 拼接成完整地址）
@@ -6,91 +11,74 @@
 #
 # 断言关键字（由 common/assertions.py 实现，新增关键字要同步维护那里的 supported_keys）：
 #   contains    字符串包含断言；写 status_code 时比较 HTTP 状态码，其它 key 走 $..key 递归取值后做包含判断
-#   eq          相等断言；只比较写出来的字段（支持多字段）
+#   eq          相等断言；只比较写出来的字段（支持多字段），响应里的 token/userId 是 null 也能比对
 #   not_null    字段存在且非空断言，值为 JSONPath 列表
-#   not_exists  字段不存在断言（负向断言），值为 JSONPath 列表
+#   not_exists  字段不存在断言（负向断言）
 #   gt          数值大于断言，值为 {JSONPath: 阈值}
 #
-# 环境账号（当前 WMS 库 db.sqlite3 的 auth_user 表）：
-#   test666 / test123   —— 唯一可用的业务账号，登录响应里 data.user_id=81 是 staff 表主键
-#   注意：不要用 admin、test01 这类不存在的账号，否则请求会在
-#   「User.objects.filter(username=...).exists()」这一步就返回，
-#   根本走不到密码校验分支，用例名与断言内容会对不上（典型假通过）。
+# 响应契约（三种分支）：
+#   成功      {"msg": "登录成功", "msg_code": 200, "error_code": null, "token": "<29位>", "userId": "...", "orgId": "..."}
+#   账号密码错 {"msg": "登录失败,用户名或密码错误", "msg_code": 9001, "token": null, "userId": null}
+#   缺参数    {"msg": "参数错误", "msg_code": -1}
 - baseInfo:
    api_name: 用户登录
-   url: /login/
+   url: /dar/user/login
    method: post
    header:
-     Content-Type: application/json;charset=UTF-8
-     Accept: application/json
+     Content-Type: application/x-www-form-urlencoded;charset=UTF-8
   testCase:
     - case_name: 登录成功-用户名和密码都正确
-      json:
-        name: test666
-        password: test123
+      data:
+        user_name: test01
+        passwd: admin123
       validation:
-        # 第一层：HTTP 状态码。GreaterWMS 用 JsonResponse 统一返回，成功/失败都是 200
-        - contains: {'status_code': 200}
-        # 第二层：业务状态码。FBMsg.ret() 返回的 code 是字符串 '200'
-        - contains: {'code': '200'}
-        - contains: {'msg': 'Success Create'}
-        # 第三层：业务数据。登录成功必须下发凭证 openid（后续接口的 token 请求头）
-        - not_null: ['$.data.openid', '$.data.user_id']
-        # data.user_id 实际是 staff 表主键（本环境 test666 -> 81），业务上必须是正整数
-        - gt: {'$.data.user_id': 0}
+        # 第一层：HTTP 状态码（mock 服务统一用 jsonify 返回，成功失败都是 200）
+        - contains: { 'status_code': 200 }
+        # 第二层：业务状态码 + 提示语
+        - eq: { 'msg_code': 200 }
+        - contains: { 'msg': '登录成功' }
+        # 第三层：登录成功必须下发凭证 token / userId（后面所有需要鉴权的接口都靠它）
+        - not_null: [ '$.token', '$.userId' ]
       extract:
-        # 接口关联：把登录结果写入 extract.yaml，供后续模块用 ${get_extract_data(token)} 引用
-        #   token     -> openid，后续 DRF 接口的 token 请求头（utils/auth.py 读 HTTP_TOKEN）
-        #   operator  -> staff id，后续写操作接口的 operator 请求头（asn 等接口读 HTTP_OPERATOR）
-        #   user_name -> 登录名。WMS 里 staff 记录与账号同名，写操作接口落库的 creater 就是它；
-        #                后面断言明细的 creater 时用它，避免把账号名写死在用例里
-        token: $.data.openid
-        operator: $.data.user_id
-        user_name: $.data.name
+        # 接口关联：把登录结果写入 extract.yaml，供后续用例用 ${get_extract_data(token)} 引用
+        # 注意：被测服务的 token 存在全局变量里，每成功登录一次就覆盖一次
+        #（flask_service.py: global_params['token'] = token），
+        # 而新增用户接口校验的正是这个全局值，所以"提取 token"必须和"服务端最新 token"是同一份。
+        # 这也是 login 模块要排在其他模块前面的原因（见 test_login.py 的 CHAIN_ORDER）。
+        token: $.token
+        userId: $.userId
 
-    - case_name: 登录失败-密码错误（账号存在）
-      # 关键：这里必须用真实存在的账号 test666。
-      # 如果写不存在的账号，接口会在「用户名是否存在」的判断上直接返回，
-      # 测到的是「用户不存在」而不是「密码错误」；
-      # 这两种失败的 code/msg 完全相同（都是 1011），只有响应里有没有 ip 字段能区分：
-      #   userlogin/views.py 用户名不存在分支 -> err_ret['ip'] = ip（带 ip）
-      #                      密码错误分支     -> 只回 data（不带 ip）
-      json:
-        name: test666
-        password: wrong_password
+    - case_name: 登录失败-密码错误
+      # 必须用真实存在的账号 test01，才是"密码错误"这条分支
+      data:
+        user_name: test01
+        passwd: wrong_password
       validation:
-        - contains: {'status_code': 200}
-        - contains: {'code': '1011'}
-        - contains: {'msg': 'User Name Or Password Error'}
-        # 负向断言：登录失败绝不能下发任何可用凭证
-        - not_exists: ['$.data.openid', '$.data.user_id']
-        # 分支校验：不带 ip 才说明真的走到了「密码错误」分支（走的是 authenticate 失败那条路）。
-        # 说明：这条断言依赖当前实现细节，如果开发后续给两条失败分支返回不同的 code
-        #（utils/fbmsg.py 里其实已经有现成的 err_psw() -> code 1027「用户密码错误」），
-        # 就可以把这条断言删掉，改成断言 code=1027。
-        - not_exists: ['$.ip']
-
-    - case_name: 登录失败-缺少密码必填字段
-      # 同样要用存在的账号，才能覆盖「password 为 None -> authenticate 失败」这条分支
-      json:
-        name: test666
-      validation:
-        - contains: {'status_code': 200}
-        - contains: {'code': '1011'}
-        - contains: {'msg': 'User Name Or Password Error'}
-        - not_exists: ['$.data.openid', '$.data.user_id']
-        # 同上：不带 ip 才是密码校验分支
-        - not_exists: ['$.ip']
+        - contains: { 'status_code': 200 }
+        - eq: { 'msg_code': 9001 }
+        - contains: { 'msg': '登录失败' }
+        # 负向断言：登录失败绝不能下发可用凭证。
+        # 这里用 eq 比 not_exists 更严格 —— 响应里确实有 token/userId 两个字段，但值必须是 null。
+        # 注意必须写 YAML 的 null：写成 None 会被解析成字符串 "None"，
+        # 断言就变成「null == "None"」，这条用例会一直失败（踩过一次）
+        - eq: { 'token': null, 'userId': null }
 
     - case_name: 登录失败-用户名不存在
-      # 这条是原来「密码错误」用例实际覆盖的场景，现在单独拆出来，场景和用例名才对得上
-      json:
-        name: not_exist_user
-        password: '123456'
+      data:
+        user_name: not_exist_user
+        passwd: admin123
       validation:
-        - contains: {'status_code': 200}
-        - contains: {'code': '1011'}
-        - contains: {'msg': 'User Name Or Password Error'}
-        - not_exists: ['$.data.openid', '$.data.user_id']
-        # 用户名不存在分支会带上 ip 字段，用来证明走的确实是这条分支
-        - not_null: ['$.ip']
+        - contains: { 'status_code': 200 }
+        - eq: { 'msg_code': 9001 }
+        - contains: { 'msg': '登录失败' }
+        - eq: { 'token': null, 'userId': null }
+
+    - case_name: 登录失败-缺少密码必填字段
+      # 只传用户名不传密码：接口里 all([user_name, passwd]) 判断不通过，
+      # 返回的是"参数错误 msg_code=-1"，和"账号密码错误 9001"是两个不同分支
+      data:
+        user_name: test01
+      validation:
+        - contains: { 'status_code': 200 }
+        - eq: { 'msg_code': -1 }
+        - contains: { 'msg': '参数错误' }

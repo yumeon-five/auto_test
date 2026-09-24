@@ -5,8 +5,15 @@ from common.readyaml import get_testcase_yaml
 
 from base.apiutil import BaseRequest
 
-# 链路顺序：登录(0) -> 创建(10) -> 明细(20) -> 预装车(30) -> 预分拣(40) -> 完成分拣(50) -> 查明细(55) -> 上架(60)
-# 由 conftest.py 的 pytest_collection_modifyitems 读取
+# 模块三：登录
+#
+# 链路顺序：login(0) 登录拿 token -> User(10) 用户单接口 -> Business(20) 下单流程
+# 由 conftest.py 的 pytest_collection_modifyitems 读取。
+#
+# 为什么登录必须排最前：登录接口每成功调用一次就会覆盖被测服务里的全局 token，
+# 而"新增用户"接口拿用例里的 token 去和这个全局值比对。
+# 登录用例跑在前面时，extract.yaml 里的 token 和服务端全局值是同一次登录的结果，
+# 后面的写入类接口才能通过校验。
 CHAIN_ORDER = 0
 
 # 模块级加载用例数据，按 yaml 中的顺序索引参数化

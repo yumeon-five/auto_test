@@ -87,6 +87,18 @@ class BaseRequest(object):
         """
         cookie = None
         params_type = ['params', 'data', 'json']
+        # 先浅拷贝一份用例数据，再动它（下面会 pop 掉 case_name / validation 等字段）。
+        # 为什么必须拷贝：test_case 是 @pytest.mark.parametrize 传进来的**同一个 dict 对象**，
+        # 直接 pop 等于污染了参数化数据，会带来两个后果：
+        #   1) 同一条用例数据没法执行第二次：第二次进来 case_name 已经没了，报 KeyError: 'case_name'；
+        #   2) allure 是在用例 teardown 阶段、用这个"还活着的"参数对象算 historyId 的
+        #      （见 allure_pytest/listener.py：get_history_id(..., original_values=__get_pytest_params(item))）。
+        #      case_name 被 pop 之后，两条"请求数据相同、只是用例名/断言不同"的用例
+        #      算出来的 historyId 完全一样，Allure 会把它们当成同一个用例的两次重试 ——
+        #      表现就是 pytest 跑了 19 条，Allure 报告里只统计出 18 条。
+        #      （实测：'无效删除用户·userid不存在' 和 '无效删除用户·userid为空'
+        #        两条数据都是 user_id=1238393873922，正好撞在一起。）
+        test_case = dict(test_case)
         try:
             base_url = self.conf.get_envi('host')
             # URL 也走一遍 ${} 解析：链路用例的路径参数需要接口关联，
@@ -250,6 +262,17 @@ class BaseRequest(object):
                     self.read.write_yaml_data(extract_date)
         except:
             logs.error('接口返回值提取异常，请检查yaml文件extract_list表达式是否正确！')
+
+
+# ---------------------------------------------------------------------------
+# 兼容电商项目用例的导入写法：testcase/User/test_debug_api.py 等文件写的是
+#     from base.apiutil import RequestBase
+# 而本框架的类名是 BaseRequest。这里加一个别名让两种写法都能用，
+# 不必为了改个类名去动一批已经写好的用例文件。
+# 注意：RequestBase 就是 BaseRequest 本身（不是包装类、不是子类），行为完全一致。
+# 需要"单参数入口"的业务场景用例请看 base/apiutil_business.py。
+# ---------------------------------------------------------------------------
+RequestBase = BaseRequest
 
 
 if __name__ == '__main__':

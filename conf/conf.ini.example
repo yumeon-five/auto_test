@@ -8,31 +8,31 @@
 # 本模板只保留占位符，禁止把真实口令写进来。
 # ============================================================
 
-# 被测系统地址（WMS 后端）。
-# 本地用 daphne 起后端的默认端口是 8008：
-#   cd GreaterWMS && python -m daphne -b 127.0.0.1 -p 8008 greaterwms.asgi:application
+# 被测系统地址（电子商务项目 flask mock 服务）。
+# 本地启动：
+#   cd <apiFlaskService 目录>
+#   .venv\Scripts\python.exe base\flask_service.py      （监听 127.0.0.1:8787）
 [api_envi]
-host = http://127.0.0.1:8008
+host = http://127.0.0.1:8787
 
 # 业务前置登录账号（conftest.py 的 login_first 夹具使用）。
 # 必须与 testcase/login/login.yaml 中「登录成功」用例的账号保持一致，
-# 否则前置登录会失败，接口关联用的 token / operator 就写不进 extract.yaml。
-# 注意：账号必须在 WMS 库里真实存在（django 的 auth_user 表），
-# 用不存在的账号登录会让失败用例走「用户名不存在」分支，测不到密码校验。
+# 否则前置登录失败，接口关联用的 token 就写不进 extract.yaml，
+# 新增用户等用例会在 ${get_extract_data(token)} 这一步直接报错。
 [LOGIN]
 username = change_me
 password = change_me
 
 # 数据库断言（common/connection.py + assertions.py 的 db 断言）用。
-# type 决定用哪种库：sqlite（GreaterWMS 默认）/ mysql；
-# 两种连接的 query() 都返回 list[dict]，所以断言写法不随库类型变化。
+# 电商项目是 flask mock 服务，数据在 data/mockdata/*.json 里，没有数据库，
+# 当前用例没有用 db 断言；以后接 MySQL 时把 type 改成 mysql 即可，断言写法不用动
+# （两种连接的 query() 都返回 list[dict]）。
 [DB]
 type = sqlite
 # SQLite 文件路径，相对 auto-test 项目根目录；断言以只读方式打开（避免测试代码误改数据）
 sqlite_path = ../GreaterWMS/db.sqlite3
 
-# MySQL 连接参数（[DB] type = mysql 时才用）。
-# 注意：GreaterWMS 用的是 SQLite，下面这组是模板项目遗留的配置，换成 MySQL 的被测系统时再改。
+# MySQL 连接参数（[DB] type = mysql 时才用）
 [MYSQL]
 host = 127.0.0.1
 port = 3306
@@ -41,16 +41,15 @@ password = change_me
 database = change_me
 
 # 自动化测试数据清理（common/clean_data.py，由 conftest.py 的 clean_history_data 夹具调用）。
-# 创建入库单等写接口每跑一次就会造一条数据，会话开始前按 creater 前缀清理上一次的遗留数据。
+# 注意：这段的规则是按原 WMS 项目写的（按 creater 前缀删 ASN 入库单、还原库位标记），
+# 换成别的被测系统时先保持 enable = 0（关闭），改好 common/clean_data.py 再打开。
 [CLEAN]
 # 1=开启会话前自动清理，0=关闭
-enable = 1
-# 测试数据标识前缀，与 testcase/asn/asn_create.yaml 里 creater: api_auto_${get_run_id()} 对应
-# 注意：填错会误删手工数据，务必只用在测试环境
+enable = 0
+# 测试数据标识前缀
 creater_prefix = api_auto
-# 1=会话前把 Normal 库位重新标记为空库位（上架成功会把库位置为非空，不还原几次就没有空库位可用）
-# 只改 empty_label 标记位，不动库位里的实际数量；库位里有别人手工放的货时可改成 0
-reset_bin_label = 1
+# 1=会话前把 Normal 库位重新标记为空库位（WMS 专用，其它项目留 0）
+reset_bin_label = 0
 
 # Redis（common/connection.py 的 RedisClient 用），不需要可以留空
 [REDIS]
