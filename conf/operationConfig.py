@@ -13,7 +13,12 @@ class OperationConfig:
             self.__file_path=file_path
         self.conf=configparser.ConfigParser()
         try:
-            self.conf.read(self.__file_path,encoding='utf-8')
+            # 用 utf-8-sig 读：它同时兼容「带 BOM」和「不带 BOM」的 UTF-8 文件。
+            # 用记事本另存、或用 PowerShell 的 Set-Content -Encoding UTF8 生成的 conf.ini
+            # 开头会带 BOM（EF BB BF），按普通 utf-8 读出来第一个 key 变成 '\ufeff[api_envi]'，
+            # configparser 直接抛「File contains no section headers」，
+            # 上层只看到 host=None，最后表现成 "Invalid URL 'None/dar/user/login'" 这种看不出根因的报错。
+            self.conf.read(self.__file_path,encoding='utf-8-sig')
         except Exception as e:
             print(e)
 

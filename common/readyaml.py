@@ -21,7 +21,9 @@ def get_testcase_yaml(file):
     """
     testcase_list = []
     try:
-        with open(file,'r',encoding='UTF-8') as f:
+        # utf-8-sig：兼容带 BOM 的 UTF-8 用例文件（记事本 / PowerShell 另存就会带 BOM）。
+        # 带 BOM 时 PyYAML 会报 "special characters are not allowed"，同样看不出根因
+        with open(file,'r',encoding='utf-8-sig') as f:
             yaml_data = yaml.safe_load(f)
             for block in yaml_data:
                 base_info = block.get('baseInfo')
@@ -75,7 +77,8 @@ class ReadYamlData(object):
             with open(file_path, 'w', encoding='utf-8'):
                 pass
             print('extract.yaml文件创建成功!')
-        with open(file_path, 'r', encoding='utf-8') as f:
+        # utf-8-sig 同上：extract.yaml 是人工也可能打开的中间文件，带 BOM 时也要能读
+        with open(file_path, 'r', encoding='utf-8-sig') as f:
             extract_data=yaml.safe_load(f) or {}
             # 取不到变量时给出能定位的报错：接口关联依赖「前面的用例先执行并提取」这个变量。
             # 例如单独跑 testcase/asn/test_asn_detail.py（-k 筛选或直接指定文件）时，

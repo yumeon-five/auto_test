@@ -19,9 +19,16 @@ host = http://127.0.0.1:8787
 # 必须与 testcase/login/login.yaml 中「登录成功」用例的账号保持一致，
 # 否则前置登录失败，接口关联用的 token 就写不进 extract.yaml，
 # 新增用户等用例会在 ${get_extract_data(token)} 这一步直接报错。
+#
+# 这里填的是 mock 服务的固定测试账号，不算敏感信息：
+#   1) 账号密码写死在被测服务源码里（base/flask_service.py -> user_login() 的 user_info）；
+#   2) testcase/login/login.yaml 里同样写着 admin123。
+# 之所以在模板里给可用的默认值，是为了让 CI 从干净 clone 直接能跑起来
+#（Jenkins 每次克隆到自己的工作区，conf.ini 不入库，模板就是它的初始配置）。
+# 换成真实环境时记得把这里改成环境自己的账号，并用别的方式注入口令。
 [LOGIN]
-username = change_me
-password = change_me
+username = test01
+password = admin123
 
 # 数据库断言（common/connection.py + assertions.py 的 db 断言）用。
 # 电商项目是 flask mock 服务，数据在 data/mockdata/*.json 里，没有数据库，
